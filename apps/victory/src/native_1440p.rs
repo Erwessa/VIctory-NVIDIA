@@ -161,6 +161,21 @@ mod tests {
         }
     }
 
+    #[test]
+    fn patches_the_retail_image_for_ultrawide() {
+        let Some(path) = std::env::var_os("VICTORY_DISPLAY_PROFILE_TEST_IMAGE") else {
+            return;
+        };
+        let bytes = std::fs::read(path).unwrap();
+        let mut image = victory_loader::prepare(&bytes).unwrap();
+        assert_eq!(prepare_ultrawide(&mut image).unwrap(), (ULTRAWIDE_WIDTH, ULTRAWIDE_HEIGHT));
+        let mode = *field::<16>(&mut image, SDR_MODE).unwrap();
+        assert_eq!(mode[..4], ULTRAWIDE_WIDTH.to_le_bytes());
+        assert_eq!(mode[4..8], ULTRAWIDE_HEIGHT.to_le_bytes());
+        assert_eq!(f32::from_le_bytes(*field::<4>(&mut image, TEMPORAL_SCALE).unwrap()), 1.0);
+        assert!(prepare_ultrawide(&mut image).is_err());
+    }
+
     /// With the retail executable (as above): the upscaler path at each
     /// scale, alone (4K output) and after the 1440p patch; the scaled
     /// branch then loads the mode's scale and the noted mode is its
