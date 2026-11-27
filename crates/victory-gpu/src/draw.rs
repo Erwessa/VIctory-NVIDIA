@@ -4844,7 +4844,9 @@ impl State {
         let [viewport] = self.viewports.as_slice() else {
             return None;
         };
-        if (viewport.TopLeftX, viewport.TopLeftY, viewport.Width, viewport.Height) != (0.0, 0.0, 2560.0, 1440.0) {
+        let ultrawide = std::env::var("VICTORY_ULTRAWIDE").as_deref() == Ok("1");
+        let expected = if ultrawide { (3440.0, 1440.0) } else { (2560.0, 1440.0) };
+        if (viewport.TopLeftX, viewport.TopLeftY, viewport.Width, viewport.Height) != (0.0, 0.0, expected.0, expected.1) {
             return None;
         }
         let pipeline = crate::pipeline::host_pipeline(self.pipeline as This)?;
@@ -4876,7 +4878,9 @@ impl State {
         }
         static FIRST: std::sync::Once = std::sync::Once::new();
         FIRST.call_once(|| tracing::info!("the frontend's legacy 4K projection drawn on the 1440p target"));
-        Some(D3D12_VIEWPORT { Width: 3840.0, Height: 2160.0, ..*viewport })
+        // The frontend occupies its 2560x1440 design region in the legacy
+        // 3840x2160 viewport; shift it 440px to center that region at 3440.
+        Some(D3D12_VIEWPORT { TopLeftX: if ultrawide { 440.0 } else { 0.0 }, Width: 3840.0, Height: 2160.0, ..*viewport })
     }
 
     /// Binds vertex buffers holding the rectangles of vertices `first..first
