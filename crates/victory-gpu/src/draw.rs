@@ -4878,8 +4878,9 @@ impl State {
         }
         static FIRST: std::sync::Once = std::sync::Once::new();
         FIRST.call_once(|| tracing::info!("the frontend's legacy 4K projection drawn on the 1440p target"));
-        // Center the legacy 3840x2160 canvas in the 3440px output.
-        Some(D3D12_VIEWPORT { TopLeftX: if ultrawide { -200.0 } else { 0.0 }, Width: 3840.0, Height: 2160.0, ..*viewport })
+        // The frontend occupies its 2560x1440 design region in the legacy
+        // 3840x2160 viewport; shift it 440px to center that region at 3440.
+        Some(D3D12_VIEWPORT { TopLeftX: if ultrawide { 440.0 } else { 0.0 }, Width: 3840.0, Height: 2160.0, ..*viewport })
     }
 
     /// Binds vertex buffers holding the rectangles of vertices `first..first
