@@ -86,42 +86,51 @@ pub fn run(
         None => println!("build          unknown ({hash})"),
     }
 
-    // A 1440p output instead of the Series X's 4K one (`native_1440p`): the
-    // patched image goes to a folder of its own, beside the stock one.
+    // Native 1440p and ultrawide outputs use a separate patched image cache.
     let render_1080p = std::env::var("VICTORY_RENDER_1080P").as_deref() == Ok("1");
-    let native_1440p = render_1080p || std::env::var("VICTORY_NATIVE_1440P").as_deref() == Ok("1");
+    let ultrawide = std::env::var("VICTORY_ULTRAWIDE").as_deref() == Ok("1");
+    anyhow::ensure!(!(ultrawide && render_1080p), "ultrawide output cannot be combined with VICTORY_RENDER_1080P");
+    let native_1440p = ultrawide || render_1080p || std::env::var("VICTORY_NATIVE_1440P").as_deref() == Ok("1");
+    let (output_width, output_height) = if ultrawide {
+        (native_1440p::ULTRAWIDE_WIDTH, native_1440p::ULTRAWIDE_HEIGHT)
+    } else {
+        (native_1440p::WIDTH, native_1440p::HEIGHT)
+    };
     let images = if native_1440p {
-        anyhow::ensure!(matches!(console, Console::SeriesX), "1440p output needs the Series X profile");
+        anyhow::ensure!(matches!(console, Console::SeriesX), "native 1440p and ultrawide outputs need the Series X profile");
         if upscaler.is_some() && render_1080p {
-            println!("display        VICTORY_RENDER_1080P is left out: VICTORY_DLSS_MODE sets the scene's size");
+            println!("display        VICTORY_RENDER_1080P is left out: VICTORY_DLSS_MODE sets the scene size");
         }
-        let (w, h) = native_1440p::prepare(&mut prepared, render_1080p && upscaler.is_none())?;
-        // SAFETY: nothing else runs yet; the title and the display mode list
-        // read these later.
+        let (w, h) = if ultrawide {
+            native_1440p::prepare_ultrawide(&mut prepared)?
+        } else {
+            native_1440p::prepare(&mut prepared, render_1080p && upscaler.is_none())?
+        };
+        // SAFETY: nothing else runs yet; the title and the display mode list read these later.
         unsafe {
-            std::env::set_var("VICTORY_DISPLAY_MODE", format!("{}x{}", native_1440p::WIDTH, native_1440p::HEIGHT));
+            std::env::set_var("VICTORY_DISPLAY_MODE", format!("{output_width}x{output_height}"));
             std::env::set_var("VICTORY_NATIVE_1440P", "1");
         }
         match upscaler.map(|mode| (mode, native_1440p::prepare_upscaler(&mut prepared, mode))) {
             Some((mode, Ok(()))) => {
-                let [rw, rh] = mode.render_size([native_1440p::WIDTH, native_1440p::HEIGHT]);
-                println!(
-                    "display        {}x{} SDR, scene {rw}x{rh} through the title's FidelityFX path ({})",
-                    native_1440p::WIDTH,
-                    native_1440p::HEIGHT,
-                    mode.name()
-                );
-                cfg.cache_subdir(&format!("images/native-1440p-upscaler-{}-sdr", mode.name()))?
+                let [rw, rh] = mode.render_size([output_width, output_height]);
+                println!("display        {output_width}x{output_height} SDR, scene {rw}x{rh} through the title FidelityFX path ({})", mode.name());
+                cfg.cache_subdir(&format!("images/{}-upscaler-{}-sdr", if ultrawide { "ultrawide" } else { "native-1440p" }, mode.name()))?
             }
             other => {
                 if let Some((_, Err(e))) = other {
-                    println!("upscaling      the title's FidelityFX path was not patched in: {e:#}");
+                    println!("upscaling      the title FidelityFX path was not patched in: {e:#}");
                 }
-                println!("display        {}x{} SDR, scene {w}x{h}", native_1440p::WIDTH, native_1440p::HEIGHT);
-                cfg.cache_subdir(if render_1080p { "images/1080p-to-1440p-sdr" } else { "images/native-1440p-sdr" })?
+                println!("display        {output_width}x{output_height} SDR, scene {w}x{h}");
+                cfg.cache_subdir(if ultrawide {
+                    "images/ultrawide-3440x1440-sdr"
+                } else if render_1080p {
+                    "images/1080p-to-1440p-sdr"
+                } else {
+                    "images/native-1440p-sdr"
+                })?
             }
-        }
-    } else if let Some(mode) = upscaler {
+        }    } else if let Some(mode) = upscaler {
         match native_1440p::prepare_upscaler(&mut prepared, mode) {
             Ok(()) => {
                 println!("display        the title's output, scene at {} of it through its FidelityFX path ({})", mode.scale(), mode.name());
